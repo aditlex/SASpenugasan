@@ -1,10 +1,10 @@
-name: tests
+name: tests # Nama workflow kamu
 
 on:
   push:
     branches:
-      - develop
-      - main
+      - develop # Akan berjalan saat push ke branch develop
+      - main    # Akan berjalan saat push ke branch main
   pull_request:
     branches:
       - develop
@@ -12,39 +12,93 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Menggunakan runner Ubuntu terbaru
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4 # Mengambil kode dari repository
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@v2 # Menyiapkan PHP di runner
         with:
-          php-version: 8.4
-          tools: composer:v2
-          coverage: xdebug
+          php-version: 8.4 # Sesuaikan dengan versi PHP Laravel kamu
+          tools: composer:v2 # Menginstal Composer v2
+          coverage: xdebug # Menginstal Xdebug untuk code coverage
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4 # Menyiapkan Node.js di runner
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: '22' # Sesuaikan dengan versi Node.js yang direkomendasikan Vite
+          cache: 'npm' # Menggunakan cache npm untuk instalasi lebih cepat
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: npm ci # Menginstal dependensi Node.js secara konsisten (lebih baik dari npm install di CI)
 
-      - name: Build Assets
-        run: npm run build
+      - name: Build Assets with Vite
+        run: npm run build # Menjalankan proses build Vite untuk menghasilkan aset frontend
 
-      - name: Install Dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+      # ==============================================================================================================================
+      # <<< LANGKAH VALIDASI PENTING UNTUK MENDETEKSI MANIFEST.JSON >>>
+      # Langkah ini akan mencetak isi folder build dan manifest.json,
+      # serta akan GAGAL jika manifest.json tidak ditemukan di lokasi public/build/.vite/
+      # Ini akan memberitahu kita dengan pasti apakah masalahnya ada pada proses build Vite itu sendiri.
+      - name: Validate Vite Manifest Presence
+        run: |
+          echo "Checking for public/build directory existence and contents..."
+          if [ -d "public/build" ]; then
+            ls -la public/build/
+          else
+            echo "Error: public/build directory does not exist!"
+            exit 1 # Gagal jika folder build tidak ada
+          fi
+
+          echo ""
+          echo "Checking for public/build/.vite directory existence and contents..."
+          if [ -d "public/build/.vite" ]; then
+            ls -la public/build/.vite/
+          else
+            echo "Error: public/build/.vite directory does not exist! Manifest will be missing."
+            exit 1 # Gagal jika folder .vite tidak ada
+          fi
+          
+          echo ""
+          echo "Verifying public/build/.vite/manifest.json presence and content..."
+          if [ -f "public/build/.vite/manifest.json" ]; then
+            echo "public/build/.vite/manifest.json found. Content:"
+            cat public/build/.vite/manifest.json # Mencetak isi manifest.json
+          else
+            echo "Error: public/build/.vite/manifest.json NOT FOUND!"
+            exit 1 # Gagal jika manifest.json tidak ditemukan di lokasi baru
+          fi
+
+          echo ""
+          echo "Checking if public/build/manifest.json (old location) exists (should NOT if Vite 4+ is working correctly)..."
+          if [ -f "public/build/manifest.json" ]; then
+            echo "Warning: public/build/manifest.json (old location) found. This might indicate an issue."
+            cat public/build/manifest.json
+          else
+            echo "public/build/manifest.json (old location) NOT found. This is expected."
+          fi
+      # <<< AKHIR LANGKAH VALIDASI PENTING >>>
+      # ==============================================================================================================================
+
+      - name: Install Composer Dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader # Menginstal dependensi PHP
 
       - name: Copy Environment File
-        run: cp .env.example .env
+        run: cp .env.example .env # Menyalin file .env.example menjadi .env
 
       - name: Generate Application Key
-        run: php artisan key:generate
+        run: php artisan key:generate # Menghasilkan application key
 
-      - name: Tests
-        run: ./vendor/bin/pest
+      # ==============================================================================================================================
+      # <<< PENTING: MENAMBAHKAN KONFIGURASI UNTUK TES >>>
+      # Langkah ini akan menambahkan VITE_DEV_SERVER=false ke .env,
+      # memastikan Laravel tidak mencari server Vite dev saat menjalankan tes.
+      - name: Configure Test Environment
+        run: echo "VITE_DEV_SERVER=false" >> .env
+      # <<< AKHIR KONFIGURASI UNTUK TES >>>
+      # ==============================================================================================================================
+
+      - name: Run Tests
+        run: ./vendor/bin/pest # Menjalankan tes dengan Pest
